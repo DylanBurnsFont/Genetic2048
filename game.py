@@ -155,7 +155,7 @@ class Board():
 
     def printBoard(self):
         for row in self.grid:
-            print(row)
+            print(" ".join("{:4}".format(val) if val != 0 else "   ." for val in row))
         print("Score:", self.score)
 
     def possibleMoves(self):
@@ -178,7 +178,7 @@ def main(stdscr):
     while True:
         stdscr.clear()
         for row in board.grid:
-            stdscr.addstr(str(row) + '\n')
+            stdscr.addstr(" ".join("{:4}".format(val) if val != 0 else "   ." for val in row) + '\n')
         stdscr.addstr(f"Score: {board.score}\n")
         stdscr.addstr("Use arrow keys to move. Press 'q' to quit.\n")
         if board.gameOver:
