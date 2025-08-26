@@ -1,5 +1,5 @@
 import curses
-from random import randint
+import random
 
 class Board():
     def __init__(self):
@@ -145,9 +145,9 @@ class Board():
 
     def spawnTile(self):
         try:
-            pos = randint(0, self.nEmptyTiles - 1)
+            pos = random.randint(0, self.nEmptyTiles - 1)
             i, j = self.emptyTiles[pos]
-            self.grid[i][j] = 2 if randint(0, 1) == 0 else 4
+            self.grid[i][j] = 2 if random.random() < 0.8 else 4
             self.emptyTiles.remove((i, j))
             self.nEmptyTiles -= 1
         except ValueError:
