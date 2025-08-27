@@ -214,16 +214,20 @@ move_map = {0: "left", 1: "right", 2: "up", 3: "down"}
 
 def fitness_func(ga_instance, solution, solution_idx):
     board = Board()
-    for gene in solution:
-        move = move_map[int(gene) % 4]
+    move_idx = 0
+    max_loops = 1000  # Prevent infinite loops
+    while not board.gameOver and move_idx < max_loops:
+        prev_grid = [row[:] for row in board.grid]
+        move = move_map[int(solution[move_idx % len(solution)]) % 4]
         board.move(move)
-        if board.gameOver:
+        move_idx += 1
+        # If the board didn't change, check for a full cycle
+        if board.grid == prev_grid and move_idx % len(solution) == 0:
             break
-    # Weighted sum: score + 10 * max tile
     return board.score + 10 * board.getMaxTile()
 
 if __name__ == "__main__":
-    total_runs = 5  # Change this to set how many times to restart with best solution
+    total_runs = 15  # Change this to set how many times to restart with best solution
     generations_per_run = 50
     population_size = 40
     num_genes = 500
@@ -266,8 +270,8 @@ if __name__ == "__main__":
             best_solution = solution
             best_score = solution_fitness
             best_tile = max_tile
-
-    print("Final best sequence:", [move_map[int(g) % 4] for g in best_solution])
+    
+    # print("Final best sequence:", [move_map[int(g) % 4] for g in best_solution])
     print("Final best score:", best_score)
     print("Final best tile:", best_tile)
 
