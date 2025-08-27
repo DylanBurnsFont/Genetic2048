@@ -1,5 +1,7 @@
 import curses
 import random
+import pygad
+import numpy as np
 
 class Board():
     def __init__(self):
@@ -178,30 +180,95 @@ class Board():
                     return True
         return False
 
-def main(stdscr):
-    board = Board()
-    while True:
-        stdscr.clear()
-        for row in board.grid:
-            stdscr.addstr(" ".join("{:4}".format(val) if val != 0 else "   ." for val in row) + '\n')
-        stdscr.addstr(f"Score: {board.score}\n")
-        stdscr.addstr("Use arrow keys to move. Press 'q' to quit.\n")
-        if board.gameOver:
-            stdscr.addstr(f"Game Over! Final Score: {board.score}\n")
-            stdscr.addstr(f"Max Tile: {board.getMaxTile()}\n")
-            stdscr.addstr("Press 'q' to quit | 'r' to restart.\n")
-        key = stdscr.getch()
-        if key == curses.KEY_LEFT:
-            board.move("left")
-        elif key == curses.KEY_RIGHT:
-            board.move("right")
-        elif key == curses.KEY_UP:
-            board.move("up")
-        elif key == curses.KEY_DOWN:
-            board.move("down")
-        elif key == ord('q'):
-            break
-        elif key == ord('r'):
-            board.reset()
+# def main(stdscr):
+#     board = Board()
+#     while True:
+#         stdscr.clear()
+#         for row in board.grid:
+#             stdscr.addstr(" ".join("{:4}".format(val) if val != 0 else "   ." for val in row) + '\n')
+#         stdscr.addstr(f"Score: {board.score}\n")
+#         stdscr.addstr("Use arrow keys to move. Press 'q' to quit.\n")
+#         if board.gameOver:
+#             stdscr.addstr(f"Game Over! Final Score: {board.score}\n")
+#             stdscr.addstr(f"Max Tile: {board.getMaxTile()}\n")
+#             stdscr.addstr("Press 'q' to quit | 'r' to restart.\n")
+#         key = stdscr.getch()
+#         if key == curses.KEY_LEFT:
+#             board.move("left")
+#         elif key == curses.KEY_RIGHT:
+#             board.move("right")
+#         elif key == curses.KEY_UP:
+#             board.move("up")
+#         elif key == curses.KEY_DOWN:
+#             board.move("down")
+#         elif key == ord('q'):
+#             break
+#         elif key == ord('r'):
+#             board.reset()
 
-curses.wrapper(main)
+# Genetic Algorithm integration for 2048 using pygad
+# Install pygad: pip install pygad
+
+# Map integer genes to moves
+move_map = {0: "left", 1: "right", 2: "up", 3: "down"}
+
+def fitness_func(ga_instance, solution, solution_idx):
+    board = Board()
+    for gene in solution:
+        move = move_map[int(gene) % 4]
+        board.move(move)
+        if board.gameOver:
+            break
+    # Weighted sum: score + 10 * max tile
+    return board.score + 10 * board.getMaxTile()
+
+if __name__ == "__main__":
+    total_runs = 5  # Change this to set how many times to restart with best solution
+    generations_per_run = 50
+    population_size = 40
+    num_genes = 500
+    best_solution = None
+    best_score = -float('inf')
+    best_tile = 0
+
+    for run in range(total_runs):
+        if best_solution is not None:
+            initial_population = [best_solution] + [np.random.randint(0, 4, num_genes) for _ in range(population_size-1)]
+        else:
+            initial_population = None
+
+        ga_instance = pygad.GA(
+            num_generations=generations_per_run,
+            num_parents_mating=20,
+            fitness_func=fitness_func,
+            sol_per_pop=population_size,
+            num_genes=num_genes,
+            gene_type=int,
+            init_range_low=0,
+            init_range_high=4,
+            mutation_percent_genes=10,
+            initial_population=initial_population
+        )
+
+        ga_instance.run()
+        solution, solution_fitness, _ = ga_instance.best_solution()
+        # Evaluate max tile for best solution
+        board = Board()
+        for gene in solution:
+            move = move_map[int(gene) % 4]
+            board.move(move)
+            if board.gameOver:
+                break
+        max_tile = board.getMaxTile()
+        board.printBoard()
+        print(f"Run {run+1}: Best score: {board.getScore()}, Max tile: {max_tile}\n")
+        if solution_fitness > best_score:
+            best_solution = solution
+            best_score = solution_fitness
+            best_tile = max_tile
+
+    print("Final best sequence:", [move_map[int(g) % 4] for g in best_solution])
+    print("Final best score:", best_score)
+    print("Final best tile:", best_tile)
+
+# curses.wrapper(main)
