@@ -9,6 +9,7 @@ class Board():
         self.nEmptyTiles = 16
         self.spawnTile()
         self.gameOver = False
+        self.maxTile = 0
     
     def reset(self):
         self.grid = [[0] * 4 for _ in range(4)]
@@ -17,6 +18,9 @@ class Board():
         self.nEmptyTiles = 16
         self.spawnTile()
         self.gameOver = False
+    
+    def getMaxTile(self):
+        return self.maxTile
 
     def getGrid(self):
         return self.grid
@@ -136,6 +140,7 @@ class Board():
         # Update empty tiles after every move
         self.emptyTiles = [(i, j) for i in range(4) for j in range(4) if self.grid[i][j] == 0]
         self.nEmptyTiles = len(self.emptyTiles)
+        self.maxTile = max(max(row) for row in self.grid)
         # Only spawn a tile if the board changed
         if changed:
             self.spawnTile()
@@ -183,7 +188,8 @@ def main(stdscr):
         stdscr.addstr("Use arrow keys to move. Press 'q' to quit.\n")
         if board.gameOver:
             stdscr.addstr(f"Game Over! Final Score: {board.score}\n")
-            stdscr.addstr("Press 'q' to quit.\n")
+            stdscr.addstr(f"Max Tile: {board.getMaxTile()}\n")
+            stdscr.addstr("Press 'q' to quit | 'r' to restart.\n")
         key = stdscr.getch()
         if key == curses.KEY_LEFT:
             board.move("left")
@@ -195,5 +201,7 @@ def main(stdscr):
             board.move("down")
         elif key == ord('q'):
             break
+        elif key == ord('r'):
+            board.reset()
 
 curses.wrapper(main)
