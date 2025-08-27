@@ -1,4 +1,3 @@
-import curses
 import random
 import pygad
 import numpy as np
@@ -180,65 +179,56 @@ class Board():
                     return True
         return False
 
-# def main(stdscr):
-#     board = Board()
-#     while True:
-#         stdscr.clear()
-#         for row in board.grid:
-#             stdscr.addstr(" ".join("{:4}".format(val) if val != 0 else "   ." for val in row) + '\n')
-#         stdscr.addstr(f"Score: {board.score}\n")
-#         stdscr.addstr("Use arrow keys to move. Press 'q' to quit.\n")
-#         if board.gameOver:
-#             stdscr.addstr(f"Game Over! Final Score: {board.score}\n")
-#             stdscr.addstr(f"Max Tile: {board.getMaxTile()}\n")
-#             stdscr.addstr("Press 'q' to quit | 'r' to restart.\n")
-#         key = stdscr.getch()
-#         if key == curses.KEY_LEFT:
-#             board.move("left")
-#         elif key == curses.KEY_RIGHT:
-#             board.move("right")
-#         elif key == curses.KEY_UP:
-#             board.move("up")
-#         elif key == curses.KEY_DOWN:
-#             board.move("down")
-#         elif key == ord('q'):
-#             break
-#         elif key == ord('r'):
-#             board.reset()
-
-# Genetic Algorithm integration for 2048 using pygad
-# Install pygad: pip install pygad
-
 # Map integer genes to moves
 move_map = {0: "left", 1: "right", 2: "up", 3: "down"}
 
 def fitness_func(ga_instance, solution, solution_idx):
-    board = Board()
-    move_idx = 0
-    max_loops = 1000  # Prevent infinite loops
-    while not board.gameOver and move_idx < max_loops:
-        prev_grid = [row[:] for row in board.grid]
-        move = move_map[int(solution[move_idx % len(solution)]) % 4]
-        board.move(move)
-        move_idx += 1
-        # If the board didn't change, check for a full cycle
-        if board.grid == prev_grid and move_idx % len(solution) == 0:
-            break
-    return board.score + 10 * board.getMaxTile()
+    # Average fitness over multiple random games
+    num_trials = 3
+    total_score = 0
+    total_max_tile = 0
+    total_empty_tiles = 0
+    for _ in range(num_trials):
+        board = Board()
+        move_idx = 0
+        max_loops = 1000
+        while not board.gameOver and move_idx < max_loops:
+            prev_grid = [row[:] for row in board.grid]
+            move = move_map[int(solution[move_idx % len(solution)]) % 4]
+            board.move(move)
+            move_idx += 1
+            if board.grid == prev_grid and move_idx % len(solution) == 0:
+                break
+        total_score += board.score
+        total_max_tile += board.getMaxTile()
+        total_empty_tiles += len(board.getEmptyTiles())
+    avg_score = total_score / num_trials
+    avg_max_tile = total_max_tile / num_trials
+    avg_empty_tiles = total_empty_tiles / num_trials
+    # Combine score, max tile, and empty tiles
+    return avg_score + (avg_max_tile ** 2) + 5 * avg_empty_tiles
 
 if __name__ == "__main__":
-    total_runs = 15  # Change this to set how many times to restart with best solution
-    generations_per_run = 50
-    population_size = 40
+    total_runs = 50
+    generations_per_run = 100
+    population_size = 100
     num_genes = 500
-    best_solution = None
-    best_score = -float('inf')
-    best_tile = 0
+    num_elites = 5
+    best_solutions_ever = []
+    best_scores_ever = []
+    best_tiles_ever = []
+    target_tile = 512  # Set your target tile here
 
-    for run in range(total_runs):
-        if best_solution is not None:
-            initial_population = [best_solution] + [np.random.randint(0, 4, num_genes) for _ in range(population_size-1)]
-        else:
+    run = 0
+
+    #for run in range(total_runs):
+    while True:
+        run += 1
+        initial_population = []
+        if best_solutions_ever:
+            initial_population.extend(best_solutions_ever)
+        initial_population += [np.random.randint(0, 4, num_genes) for _ in range(population_size - len(initial_population))]
+        if not best_solutions_ever:
             initial_population = None
 
         ga_instance = pygad.GA(
@@ -250,29 +240,32 @@ if __name__ == "__main__":
             gene_type=int,
             init_range_low=0,
             init_range_high=4,
-            mutation_percent_genes=10,
+            mutation_percent_genes=40,
             initial_population=initial_population
         )
 
         ga_instance.run()
-        solution, solution_fitness, _ = ga_instance.best_solution()
-        # Evaluate max tile for best solution
-        board = Board()
-        for gene in solution:
-            move = move_map[int(gene) % 4]
-            board.move(move)
-            if board.gameOver:
-                break
-        max_tile = board.getMaxTile()
-        board.printBoard()
-        print(f"Run {run+1}: Best score: {board.getScore()}, Max tile: {max_tile}\n")
-        if solution_fitness > best_score:
-            best_solution = solution
-            best_score = solution_fitness
-            best_tile = max_tile
-    
-    # print("Final best sequence:", [move_map[int(g) % 4] for g in best_solution])
-    print("Final best score:", best_score)
-    print("Final best tile:", best_tile)
+        solutions = ga_instance.population
+        fitnesses = ga_instance.last_generation_fitness
+        sorted_indices = np.argsort(fitnesses)[::-1]
+        best_solutions_ever = [solutions[i] for i in sorted_indices[:num_elites]]
+        best_scores_ever = [fitnesses[i] for i in sorted_indices[:num_elites]]
+        best_tiles_ever = []
+        for elite in best_solutions_ever:
+            board = Board()
+            move_idx = 0
+            max_loops = 1000
+            while not board.gameOver and move_idx < max_loops:
+                move = move_map[int(elite[move_idx % len(elite)]) % 4]
+                board.move(move)
+                move_idx += 1
+            best_tiles_ever.append(board.getMaxTile())
+        print(f"Run {run+1}: Best scores: {best_scores_ever}, Max tiles: {best_tiles_ever}")
+        if best_tiles_ever[0] >= target_tile:
+            print(f"Target reached: {best_tiles_ever[0]} in run {run+1}")
+            break
+
+    print("Final best score:", best_scores_ever[0])
+    print("Final best tile:", best_tiles_ever[0])
 
 # curses.wrapper(main)
