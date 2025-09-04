@@ -1,6 +1,8 @@
 import random
-import pygad
 import numpy as np
+import pygad
+import math
+import os
 
 class Board():
     def __init__(self):
@@ -179,93 +181,156 @@ class Board():
                     return True
         return False
 
-# Map integer genes to moves
-move_map = {0: "left", 1: "right", 2: "up", 3: "down"}
+# --- Heuristic evaluation function ---
+def evaluate_board(board, weights):
+    grid = board.getGrid()
+    empty_tiles = len(board.getEmptyTiles())
+    max_tile = board.getMaxTile()
 
+    # Smoothness: penalty for differences between neighbors
+    smoothness = 0
+    for i in range(4):
+        for j in range(3):
+            if grid[i][j] and grid[i][j+1]:
+                smoothness -= abs(grid[i][j] - grid[i][j+1])
+            if grid[j][i] and grid[j+1][i]:
+                smoothness -= abs(grid[j][i] - grid[j+1][i])
+
+    # Monotonicity: reward if values decrease left→right or top→bottom
+    monotonicity = 0
+    for row in grid:
+        for a, b in zip(row, row[1:]):
+            if a >= b: monotonicity += 1
+    for col in zip(*grid):
+        for a, b in zip(col, col[1:]):
+            if a >= b: monotonicity += 1
+
+    # Corner max: reward if max tile is in a corner
+    corner_max = 1 if max_tile in [
+        grid[0][0], grid[0][3], grid[3][0], grid[3][3]
+    ] else 0
+
+    features = np.array([
+        empty_tiles,
+        math.log(max_tile, 2) if max_tile > 0 else 0,
+        smoothness,
+        monotonicity,
+        corner_max
+    ])
+
+    return np.dot(weights, features)
+
+
+# --- Fitness function for GA ---
 def fitness_func(ga_instance, solution, solution_idx):
-    # Average fitness over multiple random games
-    num_trials = 3
+    num_trials = 5
     total_score = 0
-    total_max_tile = 0
-    total_empty_tiles = 0
+    total_max = 0
+
     for _ in range(num_trials):
         board = Board()
-        move_idx = 0
-        max_loops = 1000
-        while not board.gameOver and move_idx < max_loops:
-            prev_grid = [row[:] for row in board.grid]
-            move = move_map[int(solution[move_idx % len(solution)]) % 4]
-            board.move(move)
-            move_idx += 1
-            if board.grid == prev_grid and move_idx % len(solution) == 0:
+        move_limit = 2000
+        for _ in range(move_limit):
+            if board.gameOver:
                 break
-        total_score += board.score
-        total_max_tile += board.getMaxTile()
-        total_empty_tiles += len(board.getEmptyTiles())
+
+            # Try each move
+            best_score = -1e9
+            best_move = None
+            for move in ["left", "right", "up", "down"]:
+                test_board = Board()
+                test_board.grid = [row[:] for row in board.grid]
+                test_board.score = board.score
+                test_board.move(move)
+                if test_board.grid != board.grid:  # valid move
+                    score = evaluate_board(test_board, solution)
+                    if score > best_score:
+                        best_score = score
+                        best_move = move
+
+            if best_move is None:
+                break
+            board.move(best_move)
+
+        total_score += board.getScore()
+        total_max += board.getMaxTile()
+
     avg_score = total_score / num_trials
-    avg_max_tile = total_max_tile / num_trials
-    avg_empty_tiles = total_empty_tiles / num_trials
-    # Combine score, max tile, and empty tiles
-    return avg_score + (avg_max_tile ** 2) + 5 * avg_empty_tiles
+    avg_max = total_max / num_trials
+    return avg_score + (avg_max ** 2)
 
+
+# --- Run GA ---
 if __name__ == "__main__":
-    total_runs = 50
-    generations_per_run = 100
-    population_size = 100
-    num_genes = 500
-    num_elites = 5
-    best_solutions_ever = []
-    best_scores_ever = []
-    best_tiles_ever = []
-    target_tile = 512  # Set your target tile here
 
+    num_features = 5
+    target_tile = 2048
     run = 0
 
-    #for run in range(total_runs):
     while True:
         run += 1
-        initial_population = []
-        if best_solutions_ever:
-            initial_population.extend(best_solutions_ever)
-        initial_population += [np.random.randint(0, 4, num_genes) for _ in range(population_size - len(initial_population))]
-        if not best_solutions_ever:
+        print(f"\n=== GA Run {run} ===")
+
+        # Load previous best if exists
+        if os.path.exists("best_weights.npy"):
+            best_weights = np.load("best_weights.npy")
+            initial_population = [
+                best_weights + np.random.normal(0, 1, size=len(best_weights))
+                for _ in range(10)
+            ]
+            print("Loaded previous best weights:", best_weights)
+        else:
             initial_population = None
 
+        # New GA instance for this run
         ga_instance = pygad.GA(
-            num_generations=generations_per_run,
-            num_parents_mating=20,
+            num_generations=50,
+            num_parents_mating=10,
             fitness_func=fitness_func,
-            sol_per_pop=population_size,
-            num_genes=num_genes,
-            gene_type=int,
-            init_range_low=0,
-            init_range_high=4,
-            mutation_percent_genes=40,
+            sol_per_pop=30,
+            num_genes=num_features,
+            gene_type=float,
+            init_range_low=-10,
+            init_range_high=10,
+            mutation_percent_genes=30,
             initial_population=initial_population
         )
 
+        # Train
         ga_instance.run()
-        solutions = ga_instance.population
-        fitnesses = ga_instance.last_generation_fitness
-        sorted_indices = np.argsort(fitnesses)[::-1]
-        best_solutions_ever = [solutions[i] for i in sorted_indices[:num_elites]]
-        best_scores_ever = [fitnesses[i] for i in sorted_indices[:num_elites]]
-        best_tiles_ever = []
-        for elite in best_solutions_ever:
-            board = Board()
-            move_idx = 0
-            max_loops = 1000
-            while not board.gameOver and move_idx < max_loops:
-                move = move_map[int(elite[move_idx % len(elite)]) % 4]
-                board.move(move)
-                move_idx += 1
-            best_tiles_ever.append(board.getMaxTile())
-        print(f"Run {run+1}: Best scores: {best_scores_ever}, Max tiles: {best_tiles_ever}")
-        if best_tiles_ever[0] >= target_tile:
-            print(f"Target reached: {best_tiles_ever[0]} in run {run+1}")
+
+        # Get best solution
+        solution, fitness, _ = ga_instance.best_solution()
+        print("Best weights:", solution)
+        print("Best fitness:", fitness)
+
+        # Save best weights
+        np.save("best_weights.npy", solution)
+
+        # --- Test the best weights ---
+        board = Board()
+        move_limit = 5000
+        while not board.gameOver and move_limit > 0:
+            move_limit -= 1
+            best_score = -1e9
+            best_move = None
+            for move in ["left", "right", "up", "down"]:
+                test_board = Board()
+                test_board.grid = [row[:] for row in board.grid]
+                test_board.score = board.score
+                test_board.move(move)
+                if test_board.grid != board.grid:
+                    score = evaluate_board(test_board, solution)
+                    if score > best_score:
+                        best_score = score
+                        best_move = move
+            if best_move is None:
+                break
+            board.move(best_move)
+
+        print("Final Score:", board.getScore(), "Max tile:", board.getMaxTile())
+        board.printBoard()
+
+        if board.getMaxTile() >= target_tile:
+            print("Target reached!")
             break
-
-    print("Final best score:", best_scores_ever[0])
-    print("Final best tile:", best_tiles_ever[0])
-
-# curses.wrapper(main)
